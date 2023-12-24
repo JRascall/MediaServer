@@ -1,11 +1,17 @@
 import { readFileSync } from "fs";
-import { Socket, Server as TCPServer, createServer as createTCPServer } from "net";
-import { Server as TLSServer, TLSSocket, createServer as createTLSServer } from "tls";
-import { IMediaServerOptions, IRunnable } from "./types";
-import Logger from "./node_core_logger";
-import NodeRtmpSession from "./node_rtmp_session";
+import {
+  Socket,
+  Server as TCPServer,
+  createServer as createTCPServer,
+} from "net";
+import {
+  Server as TLSServer,
+  TLSSocket,
+  createServer as createTLSServer,
+} from "tls";
+import { IMediaServerOptions, IRunnable } from "@types";
+import Logger from "../node_core_logger";
 import { RtmpSession } from "./RtmpSession";
-//import { RtmpSession } from "./RtmpSession";
 
 const RTMP_PORT = 1935;
 const RTMPS_PORT = 443;
@@ -19,8 +25,7 @@ export class RtmpServer implements IRunnable {
 
   constructor(private _config: IMediaServerOptions) {
     const { rtmp: options } = this._config;
-
-    if(options == undefined) return;
+    if (options == undefined) return;
 
     options.port = this._port = options?.port || RTMP_PORT;
     this._tcpServer = createTCPServer((socket: Socket) => {
@@ -39,9 +44,7 @@ export class RtmpServer implements IRunnable {
           new RtmpSession(this._config, socket).run();
         });
       } catch (e) {
-        Logger.error(
-          `Rtmp server error while reading ssl certs: <${e}>`
-        );
+        Logger.error(`Rtmp server error while reading ssl certs: <${e}>`);
       }
     }
   }
@@ -76,7 +79,7 @@ export class RtmpServer implements IRunnable {
     this._tcpServer?.close();
     this._tlsServer?.close();
 
-    sessions.forEach((session: NodeRtmpSession) => {
+    sessions.forEach((session) => {
       session.stop();
     });
   }

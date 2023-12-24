@@ -31,6 +31,9 @@ node_modules
 *.mp4
 *.mpd
 
+
+.env
+
 .vscode
 
 yarn.lock

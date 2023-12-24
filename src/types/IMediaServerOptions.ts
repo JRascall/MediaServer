@@ -15,26 +15,34 @@ export interface IRTMPOptions {
 
 export interface IHTTPOptions {
   port: number;
-  mediaroot_path: string;
-  webroot_path: string;
+  mediaroot_path?: string;
+  webroot_path?: string;
   allow_origin: string;
-  api: boolean;
+  api?: boolean;
 }
 
 export interface IHTTPSOptions {
   port: number;
   key_patth: string;
   cert_path: string;
+  passphrase?: string
 }
 
 export interface IAuthOptions {
-  api: boolean;
-  api_user: string;
-  api_pass: string;
-  statergy: IAuthenticationStratergy;
-  play: boolean;
-  publish: boolean;
-  secret: string;
+  api?: boolean;
+  api_user?: string;
+  api_pass?: string;
+  statergy?: IAuthenticationStratergy;
+  play?: boolean;
+  publish?: boolean;
+  secret?: string;
+}
+
+
+export interface IStorageOptions {
+  endpoint: string;
+  access_key_id: string;
+  secret_access_key: string
 }
 
 
@@ -44,9 +52,10 @@ export interface IMediaServerOptions {
     https?: IHTTPSOptions;
     auth?: IAuthOptions;
     ffmpeg_path?: string,
-    trans?: any;
+    transmuxing?: any;
     relay?: any;
     fission?: any;
     cluster?: any;
     logType?: number;
+    storage?: IStorageOptions
   }

@@ -7,7 +7,6 @@ const Logger = require('./node_core_logger');
 
 const NodeCoreUtils = require('./node_core_utils');
 const NodeRelaySession = require('./node_relay_session');
-const context = require('./node_core_ctx');
 const { getFFmpegVersion, getFFmpegUrl } = require('./node_core_utils');
 const fs = require('fs');
 const querystring = require('querystring');
@@ -35,13 +34,13 @@ class NodeRelayServer {
       Logger.error('Download the latest ffmpeg static program:', getFFmpegUrl());
       return;
     }
-    context.nodeEvent.on('relayTask', this.onRelayTask.bind(this));
-    context.nodeEvent.on('relayPull', this.onRelayPull.bind(this));
-    context.nodeEvent.on('relayPush', this.onRelayPush.bind(this));
-    context.nodeEvent.on('prePlay', this.onPrePlay.bind(this));
-    context.nodeEvent.on('donePlay', this.onDonePlay.bind(this));
-    context.nodeEvent.on('postPublish', this.onPostPublish.bind(this));
-    context.nodeEvent.on('donePublish', this.onDonePublish.bind(this));
+    events.on('relayTask', this.onRelayTask.bind(this));
+    events.on('relayPull', this.onRelayPull.bind(this));
+    events.on('relayPush', this.onRelayPush.bind(this));
+    events.on('prePlay', this.onPrePlay.bind(this));
+    events.on('donePlay', this.onDonePlay.bind(this));
+    events.on('postPublish', this.onPostPublish.bind(this));
+    events.on('donePublish', this.onDonePublish.bind(this));
     this.staticCycle = setInterval(this.onStatic.bind(this), 1000);
     Logger.log('Node Media Relay Server started');
   }
@@ -67,7 +66,7 @@ class NodeRelayServer {
         session.id = i;
         session.streamPath = `/${conf.app}/${conf.name}`;
         session.on('end', (id) => {
-          context.sessions.delete(id);
+          sessions.delete(id);
           this.staticSessions.delete(id);
         });
         this.staticSessions.set(i, session);
@@ -86,15 +85,15 @@ class NodeRelayServer {
     conf.ouPath = url;
     let session = new NodeRelaySession(conf);
     const id = session.id;
-    context.sessions.set(id, session);
+    sessions.set(id, session);
     session.on('end', (id) => {
-      context.sessions.delete(id);
+      sessions.delete(id);
       this.dynamicSessions.delete(id);
     });
     this.dynamicSessions.set(id, session);
     session.run();
     Logger.log('[relay dynamic task] start id=' + id, conf.inPath, 'to', conf.ouPath);
-    context.nodeEvent.emit("relayTaskDone", id);
+    events.emit("relayTaskDone", id);
   }
 
   //从远端拉推到本地
@@ -111,15 +110,15 @@ class NodeRelayServer {
     conf.ouPath = `rtmp://127.0.0.1:${this.config.rtmp.port}/${app}/${name}`;
     let session = new NodeRelaySession(conf);
     const id = session.id;
-    context.sessions.set(id, session);
+    sessions.set(id, session);
     session.on('end', (id) => {
-      context.sessions.delete(id);
+      sessions.delete(id);
       this.dynamicSessions.delete(id);
     });
     this.dynamicSessions.set(id, session);
     session.run();
     Logger.log('[relay dynamic pull] start id=' + id, conf.inPath, 'to', conf.ouPath);
-    context.nodeEvent.emit("relayPullDone", id);
+    events.emit("relayPullDone", id);
     
   }
 
@@ -134,15 +133,15 @@ class NodeRelayServer {
     conf.ouPath = url;
     let session = new NodeRelaySession(conf);
     const id = session.id;
-    context.sessions.set(id, session);
+    sessions.set(id, session);
     session.on('end', (id) => {
-      context.sessions.delete(id);
+      sessions.delete(id);
       this.dynamicSessions.delete(id);
     });
     this.dynamicSessions.set(id, session);
     session.run();
     Logger.log('[relay dynamic push] start id=' + id, conf.inPath, 'to', conf.ouPath);
-    context.nodeEvent.emit("relayPushDone", id);
+    events.emit("relayPushDone", id);
   }
 
   onPrePlay(id, streamPath, args) {
@@ -155,7 +154,7 @@ class NodeRelayServer {
     while (i--) {
       let conf = this.config.relay.tasks[i];
       let isPull = conf.mode === 'pull';
-      if (isPull && app === conf.app && !context.publishers.has(streamPath)) {
+      if (isPull && app === conf.app && !publishers.has(streamPath)) {
         let hasApp = conf.edge.match(/rtmp:\/\/([^\/]+)\/([^\/]+)/);
         conf.ffmpeg = this.config.relay.ffmpeg;
         conf.inPath = hasApp ? `${conf.edge}/${stream}` : `${conf.edge}${streamPath}`;
@@ -178,7 +177,7 @@ class NodeRelayServer {
 
   onDonePlay(id, streamPath, args) {
     let session = this.dynamicSessions.get(id);
-    let publisher = context.sessions.get(context.publishers.get(streamPath));
+    let publisher = sessions.get(publishers.get(streamPath));
     if (session && publisher.players.size == 0) {
       session.end();
     }

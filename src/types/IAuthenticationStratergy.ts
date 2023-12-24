@@ -1,3 +1,3 @@
 export interface IAuthenticationStratergy {
-    validate(key: string): Promise<boolean>;
+    verify(key: string): Promise<boolean>;
 }

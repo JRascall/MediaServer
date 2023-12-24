@@ -1,0 +1,24 @@
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+ADD https://nodejs.org/dist/v14.17.0/node-v14.17.0-win-x64.zip C:\\node.zip
+RUN powershell -Command \
+    Expand-Archive C:\\node.zip -DestinationPath C:\\ ; \
+    Rename-Item -Path C:\\node-v14.17.0-win-x64 -NewName C:\\nodejs
+
+ENV PATH="C:\\nodejs;${PATH}"
+
+ADD https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-4.4-win64-static.zip C:\\ffmpeg.zip
+RUN powershell -Command \
+    Expand-Archive C:\\ffmpeg.zip -DestinationPath C:\\ ; \
+    Rename-Item -Path C:\\ffmpeg-4.4-win64-static -NewName C:\\ffmpeg
+
+ENV PATH="C:\\ffmpeg\\bin;${PATH}"
+
+RUN node --version
+RUN npm --version
+RUN ffmpeg -version
+
+WORKDIR /app
+COPY . /app
+RUN npm install
+EXPOSE 3000
+CMD [ "node", "app.js" ]

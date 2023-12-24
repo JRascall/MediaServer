@@ -1,0 +1,46 @@
+# fly.toml app configuration file generated for mediaserver on 2024-01-01T07:23:37Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = "mediaserver"
+primary_region = "lhr"
+
+[build]
+
+[env]
+  FFMPEG_PATH="/usr/bin/ffmpeg"
+
+[[services]]
+
+[[services]]
+  internal_port = 8000
+  processes = ["app"]
+  protocol = "tcp"
+
+   [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 80
+
+    
+   [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+[[services]]
+  internal_port = 1935
+  processes = ["app"]
+  protocol = "tcp"
+
+   [[services.ports]]
+    port = 1935
+
+  [[services.ports]]
+    handlers = ["tls"]
+    port = 443
+
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

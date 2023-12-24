@@ -1,18 +1,18 @@
-import NodeFissionServer from "./node_fission_server";
-import NodeHttpServer from "./node_http_server";
-import NodeRelayServer from "./node_relay_server";
-import { RtmpServer } from "./RtmpServer";
-import { TranscodeServer } from "./TranscodeServer";
+import { TransmuxServer } from "@transmuxing";
 import { IMediaServerOptions, IRunnable } from "@types";
+import { HttpServer } from "@http";
+import NodeFissionServer from "./node_fission_server";
+import NodeRelayServer from "./node_relay_server";
+import { RtmpServer } from "@rtmp";
+import { S3Bucket } from "@storage";
 
 const Logger = require("./node_core_logger");
-const context = require("./node_core_ctx");
 const Package = require("../package.json");
 
 export class MediaServer implements IRunnable {
   private _rtmpServer?: IRunnable;
-  private _httpServer?: NodeHttpServer;
-  private _transcodeServer?: IRunnable;
+  private _httpServer?: IRunnable;
+  private _transmuxServer?: IRunnable;
   private _relayServer?: NodeRelayServer;
   private _fissionServer?: NodeFissionServer;
 
@@ -28,16 +28,16 @@ export class MediaServer implements IRunnable {
     }
 
     if (this._config.http) {
-      this._httpServer = new NodeHttpServer(this._config);
+      this._httpServer = new HttpServer(this._config);
       this._httpServer?.run();
     }
 
-    if (this._config.trans) {
+    if (this._config.transmuxing) {
       if (this._config.cluster) {
         Logger.log("Transcode server does not work in cluster mode");
       } else {
-        this._transcodeServer = new TranscodeServer(this._config);
-        this._transcodeServer?.run();
+        this._transmuxServer = new TransmuxServer(this._config);
+        this._transmuxServer?.run();
       }
     }
 
@@ -59,6 +59,19 @@ export class MediaServer implements IRunnable {
       }
     }
 
+    if (this._config.storage) {
+      const streamsBucket = new S3Bucket(
+        "streams",
+        this._config.storage.access_key_id,
+        this._config.storage.secret_access_key,
+        this._config.storage.endpoint
+      );
+
+      streamsBucket.empty();
+      streamsBucket.abortUploads();
+
+    }
+
     process.on("uncaughtException", function (err) {
       Logger.error("uncaughtException", err);
     });
@@ -68,19 +81,19 @@ export class MediaServer implements IRunnable {
     });
   }
 
-  public on(eventName: string, listener: () => void): void {
-    context.nodeEvent.on(eventName, listener);
+  public on(eventName: string, listener: (...args: any[]) => void): void {
+    events.on(eventName, listener);
   }
 
   public async stop(): Promise<void> {
     this._relayServer?.stop();
     this._httpServer?.stop();
-    this._transcodeServer?.stop();
+    this._transmuxServer?.stop();
     this._relayServer?.stop();
     this._fissionServer?.stop();
   }
 
   public getSession(id: string) {
-    return context.sessions.get(id);
+    return sessions.get(id);
   }
 }

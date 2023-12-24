@@ -1,11 +1,5 @@
-//
-//  Created by Mingliang Chen on 17/8/23.
-//  illuspas[a]gmail.com
-//  Copyright (c) 2018 Nodemedia. All rights reserved.
-//
 const Crypto = require('crypto');
 const { spawn } = require('child_process');
-const context = require('./node_core_ctx');
 
 function generateNewSessionID() {
   let sessionID = '';
@@ -15,7 +9,7 @@ function generateNewSessionID() {
     for (let i = 0; i < 8; i++) {
       sessionID += possible.charAt((Math.random() * numPossible) | 0);
     }
-  } while (context.sessions.has(sessionID));
+  } while (sessions.has(sessionID));
   return sessionID;
 }
 

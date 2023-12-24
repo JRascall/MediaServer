@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const NodeTransServer = require('../../node_trans_server');
+//const NodeTransServer = require('../../node_trans_server');
 
 function postStreamTrans(req, res, next) {
   let config = req.body;
@@ -12,7 +12,7 @@ function postStreamTrans(req, res, next) {
     config.dash &&
     config.dashFlags
   ) {
-    let transServer = new NodeTransServer(config);
+    let transServer; // = new NodeTransServer(config);
     console.log(req.body);
     if (transServer) {
       res.json({ message: 'OK Success' });

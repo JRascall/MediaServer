@@ -6,7 +6,6 @@
 const Logger = require('./node_core_logger');
 
 const NodeFissionSession = require('./node_fission_session');
-const context = require('./node_core_ctx');
 const { getFFmpegVersion, getFFmpegUrl } = require('./node_core_utils');
 const fs = require('fs');
 const _ = require('lodash');
@@ -41,8 +40,8 @@ class NodeFissionServer {
       return;
     }
 
-    context.nodeEvent.on('postPublish', this.onPostPublish.bind(this));
-    context.nodeEvent.on('donePublish', this.onDonePublish.bind(this));
+    events.on('postPublish', this.onPostPublish.bind(this));
+    events.on('donePublish', this.onDonePublish.bind(this));
     Logger.log(`Node Media Fission Server started, MediaRoot: ${this.config.http.mediaroot}, ffmpeg version: ${version}`);
   }
 
@@ -53,7 +52,7 @@ class NodeFissionServer {
       regRes = /(.*)\/(.*)/gi.exec(task.rule);
       let [ruleApp, ruleName] = _.slice(regRes, 1);
       if ((app === ruleApp || ruleApp === '*') && (name === ruleName || ruleName === '*')) {
-        let s = context.sessions.get(id);
+        let s = sessions.get(id);
         if (s.isLocal && name.split('_')[1]) {
           continue;
         }

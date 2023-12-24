@@ -1,88 +1,72 @@
 import { TLSSocket } from "tls";
-import { IMediaServerOptions } from "./types/IMediaServerOptions";
-import { IRunnable } from "./types/IRunnable";
 import { Socket } from "net";
+import { FlvSession } from "@flv";
+import { IPublisher, IPlayer, IMediaServerOptions } from "@types";
+import {
+  RtmpPacket,
+  RTMP_OUT_CHUNK_SIZE,
+  RTMP_PORT,
+  RTMP_HANDSHAKE_SIZE,
+  RTMP_HANDSHAKE_UNINIT,
+  RTMP_HANDSHAKE_0,
+  RTMP_HANDSHAKE_1,
+  RTMP_HANDSHAKE_2,
+  RTMP_PARSE_INIT,
+  RTMP_PARSE_BASIC_HEADER,
+  RTMP_PARSE_MESSAGE_HEADER,
+  RTMP_PARSE_EXTENDED_TIMESTAMP,
+  RTMP_PARSE_PAYLOAD,
+  RTMP_CHUNK_TYPE_0,
+  RTMP_CHUNK_TYPE_1,
+  RTMP_CHUNK_TYPE_2,
+  RTMP_CHUNK_TYPE_3,
+  RTMP_CHANNEL_PROTOCOL,
+  RTMP_CHANNEL_INVOKE,
+  RTMP_CHANNEL_AUDIO,
+  RTMP_CHANNEL_VIDEO,
+  RTMP_CHANNEL_DATA,
+  RTMP_TYPE_SET_CHUNK_SIZE,
+  RTMP_TYPE_ABORT,
+  RTMP_TYPE_ACKNOWLEDGEMENT,
+  RTMP_TYPE_WINDOW_ACKNOWLEDGEMENT_SIZE,
+  RTMP_TYPE_SET_PEER_BANDWIDTH,
+  RTMP_TYPE_EVENT,
+  RTMP_TYPE_AUDIO,
+  RTMP_TYPE_VIDEO,
+  RTMP_TYPE_FLEX_STREAM,
+  RTMP_TYPE_DATA,
+  RTMP_TYPE_FLEX_OBJECT,
+  RTMP_TYPE_SHARED_OBJECT,
+  RTMP_TYPE_FLEX_MESSAGE,
+  RTMP_TYPE_INVOKE,
+  RTMP_TYPE_METADATA,
+  RTMP_CHUNK_SIZE,
+  RTMP_PING_TIME,
+  RTMP_PING_TIMEOUT,
+  STREAM_BEGIN,
+  STREAM_EOF,
+  STREAM_DRY,
+  STREAM_EMPTY,
+  STREAM_READY,
+} from "@rtmp";
+
+import * as utils from "../node_core_utils";
+import * as http from "http";
 
 const QueryString = require("querystring");
-const AV = require("./node_core_av");
+const AV = require("../node_core_av");
 const {
   AUDIO_SOUND_RATE,
   AUDIO_CODEC_NAME,
   VIDEO_CODEC_NAME,
-} = require("./node_core_av");
+} = require("../node_core_av");
 
-const AMF = require("./node_core_amf");
-const Handshake = require("./node_rtmp_handshake");
-const NodeCoreUtils = require("./node_core_utils");
-const NodeFlvSession = require("./node_flv_session");
-const Logger = require("./node_core_logger");
-
-const N_CHUNK_STREAM = 8;
-const RTMP_VERSION = 3;
-const RTMP_HANDSHAKE_SIZE = 1536;
-const RTMP_HANDSHAKE_UNINIT = 0;
-const RTMP_HANDSHAKE_0 = 1;
-const RTMP_HANDSHAKE_1 = 2;
-const RTMP_HANDSHAKE_2 = 3;
-
-const RTMP_PARSE_INIT = 0;
-const RTMP_PARSE_BASIC_HEADER = 1;
-const RTMP_PARSE_MESSAGE_HEADER = 2;
-const RTMP_PARSE_EXTENDED_TIMESTAMP = 3;
-const RTMP_PARSE_PAYLOAD = 4;
+const AMF = require("../node_core_amf");
+const Handshake = require("../node_rtmp_handshake");
+const Logger = require("../node_core_logger");
 
 const MAX_CHUNK_HEADER = 18;
-
-const RTMP_CHUNK_TYPE_0 = 0; // 11-bytes: timestamp(3) + length(3) + stream type(1) + stream id(4)
-const RTMP_CHUNK_TYPE_1 = 1; // 7-bytes: delta(3) + length(3) + stream type(1)
-const RTMP_CHUNK_TYPE_2 = 2; // 3-bytes: delta(3)
-const RTMP_CHUNK_TYPE_3 = 3; // 0-byte
-
-const RTMP_CHANNEL_PROTOCOL = 2;
-const RTMP_CHANNEL_INVOKE = 3;
-const RTMP_CHANNEL_AUDIO = 4;
-const RTMP_CHANNEL_VIDEO = 5;
-const RTMP_CHANNEL_DATA = 6;
-
 const rtmpHeaderSize = [11, 7, 3, 0];
-
-/* Protocol Control Messages */
-const RTMP_TYPE_SET_CHUNK_SIZE = 1;
-const RTMP_TYPE_ABORT = 2;
-const RTMP_TYPE_ACKNOWLEDGEMENT = 3; // bytes read report
-const RTMP_TYPE_WINDOW_ACKNOWLEDGEMENT_SIZE = 5; // server bandwidth
-const RTMP_TYPE_SET_PEER_BANDWIDTH = 6; // client bandwidth
-
-/* User Control Messages Event (4) */
-const RTMP_TYPE_EVENT = 4;
-
-const RTMP_TYPE_AUDIO = 8;
-const RTMP_TYPE_VIDEO = 9;
-
-/* Data Message */
-const RTMP_TYPE_FLEX_STREAM = 15; // AMF3
-const RTMP_TYPE_DATA = 18; // AMF0
-
-/* Shared Object Message */
-const RTMP_TYPE_FLEX_OBJECT = 16; // AMF3
-const RTMP_TYPE_SHARED_OBJECT = 19; // AMF0
-
-/* Command Message */
-const RTMP_TYPE_FLEX_MESSAGE = 17; // AMF3
-const RTMP_TYPE_INVOKE = 20; // AMF0
-
-/* Aggregate Message */
-const RTMP_TYPE_METADATA = 22;
-
-const RTMP_CHUNK_SIZE = 128;
-const RTMP_PING_TIME = 60000;
-const RTMP_PING_TIMEOUT = 30000;
-
-const STREAM_BEGIN = 0x00;
-const STREAM_EOF = 0x01;
-const STREAM_DRY = 0x02;
-const STREAM_EMPTY = 0x1f;
-const STREAM_READY = 0x20;
 
 // Enhancing RTMP, FLV  2023-03-v1.0.0-B.9
 // https://github.com/veovera/enhanced-rtmp
@@ -97,32 +81,9 @@ const PacketTypeCodedFramesX = 3;
 const PacketTypeMetadata = 4;
 const PacketTypeMPEG2TSSequenceStart = 5;
 
-class RtmpPacketHeader {
-  public timestamp: number = 0;
-  public length: number = 0;
-  public type: number = 0;
-  public stream_id: number = 0;
-
-  constructor(public fmt: number = 0, public cid: number = 0) {}
-}
-
-class RtmpPacket {
-  public header: RtmpPacketHeader;
-  public clock: number = 0;
-  public payload: any;
-  public capacity: number = 0;
-  public bytes: number = 0;
-
-  constructor(fmt: number = 0, cid: number = 0) {
-    this.header = new RtmpPacketHeader(fmt, cid);
-  }
-}
-
-const TAG: string = "rtmp";
-
-export class RtmpSession implements IRunnable {
-  private _id?: string;
-  private _ip?: string;
+export class RtmpSession implements IPublisher, IPlayer {
+  private _id: string;
+  private _ip: string;
 
   private _handshakePayload: Buffer = Buffer.alloc(RTMP_HANDSHAKE_SIZE);
   private _handshakeState: number = RTMP_HANDSHAKE_UNINIT;
@@ -184,7 +145,7 @@ export class RtmpSession implements IRunnable {
   private _publishStreamPath: string = "";
   private _publishArgs: any = {};
 
-  private _players: Set<any> = new Set();
+  private _players: Set<string> = new Set<string>();
   private _numPlayCache: number = 0;
   private _bitrateCache: any = {};
 
@@ -209,11 +170,15 @@ export class RtmpSession implements IRunnable {
     private _config: IMediaServerOptions,
     private _socket: Socket | TLSSocket
   ) {
-    this._id = NodeCoreUtils.generateNewSessionID();
-    this._ip = this._socket.remoteAddress;
-    this._outChunkSize = this._config.rtmp?.chunk_size ? this._config.rtmp?.chunk_size : RTMP_CHUNK_SIZE;
-    this._pingTime = this._config.rtmp?.ping ? this._config.rtmp?.ping * 1000 : RTMP_PING_TIME;
-    this._pingTimeout = this._config.rtmp?.ping_timeout ? this._config.rtmp?.ping_timeout * 1000 : RTMP_PING_TIMEOUT;
+    this._id = utils.generateNewSessionID();
+    this._ip = this._socket.remoteAddress!;
+    this._outChunkSize = this._config.rtmp?.chunk_size || RTMP_CHUNK_SIZE;
+    this._pingTime = this._config.rtmp?.ping
+      ? this._config.rtmp?.ping * 1000
+      : RTMP_PING_TIME;
+    this._pingTimeout = this._config.rtmp?.ping_timeout
+      ? this._config.rtmp?.ping_timeout * 1000
+      : RTMP_PING_TIMEOUT;
 
     if (this._config.rtmp?.gop_cache) {
       this._rtmpGopCacheQueue = new Set();
@@ -221,6 +186,144 @@ export class RtmpSession implements IRunnable {
     }
 
     sessions.set(this._id, this);
+  }
+  get req(): http.ClientRequest | Socket | TLSSocket {
+    return this._socket;
+  }
+  get res(): http.ServerResponse | Socket | TLSSocket {
+    return this._socket;
+  }
+  get numPlayCache(): number {
+    return this._numPlayCache;
+  }
+  set numPlayCache(val: number) {
+    this._numPlayCache = val;
+  }
+  get players(): Set<string> {
+    return this._players;
+  }
+  get firstAudioReceived(): boolean {
+    return this._isFirstAudioReceived;
+  }
+  get firstVideoReceived(): boolean {
+    return false;
+  }
+  get metaData(): any {
+    return this._metaData;
+  }
+  get aacSequenceHeader(): any {
+    return this._aacSequenceHeader;
+  }
+  get avcSequenceHeader(): any {
+    return this._avcSequenceHeader;
+  }
+  get audioCodec(): number {
+    return this._audioCodec;
+  }
+  get videoCodec(): number {
+    return this._videoCodec;
+  }
+  get streamPath(): string {
+    return this._playStreamPath;
+  }
+  get parserPacket(): any {
+    return this._parserPacket;
+  }
+  get flvGopCacheQueue(): any {
+    return this._flvGopCacheQueue;
+  }
+  get rtmpGopCacheQueue(): any {
+    return this._rtmpGopCacheQueue;
+  }
+  get starting(): boolean {
+    return this._starting;
+  }
+  get playing(): boolean {
+    return this._playing;
+  }
+  get paused(): boolean {
+    return this._paused;
+  }
+  get receivedAudio(): boolean {
+    return this._isFirstAudioReceived;
+  }
+  get streamId(): number {
+    return this._playStreamId;
+  }
+  get socket(): Socket {
+    return this._socket;
+  }
+
+  public async play(): Promise<void> {
+    const publisherId = publishers_paths.get(this._playStreamPath);
+    if (publisherId == undefined) {
+      Logger.error(`[rtmp onStartPlay] Missing publisher id - ${publisherId}`);
+      return;
+    }
+
+    const publisher = publisher_sessions.get(publisherId);
+    if (publisher == undefined) {
+      Logger.error(
+        `[rtmp onStartPlay] Missing session by publisher id - ${publisherId}`
+      );
+      return;
+    }
+
+    publisher.players.add(this._id);
+
+    if (publisher.metaData != null) {
+      let packet = new RtmpPacket();
+      packet.header.fmt = RTMP_CHUNK_TYPE_0;
+      packet.header.cid = RTMP_CHANNEL_DATA;
+      packet.header.type = RTMP_TYPE_DATA;
+      packet.payload = publisher.metaData;
+      packet.header.length = packet.payload.length;
+      packet.header.stream_id = this._playStreamId;
+      let chunks = this.rtmpChunksCreate(packet);
+      this._socket.write(chunks);
+    }
+
+    if (publisher.audioCodec === 10 || publisher.audioCodec === 13) {
+      let packet = new RtmpPacket();
+      packet.header.fmt = RTMP_CHUNK_TYPE_0;
+      packet.header.cid = RTMP_CHANNEL_AUDIO;
+      packet.header.type = RTMP_TYPE_AUDIO;
+      packet.payload = publisher.aacSequenceHeader;
+      packet.header.length = packet.payload.length;
+      packet.header.stream_id = this._playStreamId;
+      let chunks = this.rtmpChunksCreate(packet);
+      this._socket.write(chunks);
+    }
+
+    if (
+      publisher.videoCodec === 7 ||
+      publisher.videoCodec === 12 ||
+      publisher.videoCodec === 13
+    ) {
+      let packet = new RtmpPacket();
+      packet.header.fmt = RTMP_CHUNK_TYPE_0;
+      packet.header.cid = RTMP_CHANNEL_VIDEO;
+      packet.header.type = RTMP_TYPE_VIDEO;
+      packet.payload = publisher.avcSequenceHeader;
+      packet.header.length = packet.payload.length;
+      packet.header.stream_id = this._playStreamId;
+      let chunks = this.rtmpChunksCreate(packet);
+      this._socket.write(chunks);
+    }
+
+    if (publisher.rtmpGopCacheQueue != null) {
+      for (let chunks of publisher.rtmpGopCacheQueue) {
+        chunks.writeUInt32LE(this._playStreamId, 8);
+        this._socket.write(chunks);
+      }
+    }
+
+    this._idling = false;
+    this._playing = true;
+    events.emit("postPlay", this._id, this._playStreamPath, this._playArgs);
+    Logger.log(
+      `[rtmp play] Join stream. id=${this._id} streamPath=${this._playStreamPath}  streamId=${this._playStreamId} `
+    );
   }
 
   public async run(): Promise<void> {
@@ -256,6 +359,8 @@ export class RtmpSession implements IRunnable {
       events.emit("doneConnect", this._id, this._connectCmdObj);
 
       sessions.delete(this._id);
+      publisher_sessions.delete(this._id);
+      players_sessions.delete(this._id);
       this._socket.destroy();
     }
   }
@@ -272,17 +377,17 @@ export class RtmpSession implements IRunnable {
   }
 
   private onSocketClose(): void {
-    Logger.log('RTMP socket closed');
+    Logger.log("RTMP socket closed");
     this.stop();
   }
 
   private onSocketError(e: Error): void {
-    Logger.log('RTMP socket errored', e);
+    Logger.log("RTMP socket errored", e);
     this.stop();
   }
 
   private onSocketTimeout(): void {
-    Logger.log('RTMP socket timed out');
+    Logger.log("RTMP socket timed out");
     this.stop();
   }
 
@@ -678,6 +783,8 @@ export class RtmpSession implements IRunnable {
     }
   }
 
+  private rtmpEventHandler(): void { }
+
   private rtmpControlHandler(): void {
     let payload = this._parserPacket.payload;
     switch (this._parserPacket.header.type) {
@@ -697,8 +804,6 @@ export class RtmpSession implements IRunnable {
         break;
     }
   }
-
-  private rtmpEventHandler(): void {}
 
   private rtmpAudioHandler(): void {
     let payload = this._parserPacket.payload.slice(
@@ -765,7 +870,7 @@ export class RtmpSession implements IRunnable {
     packet.header.length = packet.payload.length;
     packet.header.timestamp = this._parserPacket.clock;
     let rtmpChunks = this.rtmpChunksCreate(packet);
-    let flvTag = NodeFlvSession.createFlvTag(packet);
+    let flvTag = FlvSession.createFlvTag(packet);
 
     //cache gop
     if (this._rtmpGopCacheQueue != null) {
@@ -777,34 +882,44 @@ export class RtmpSession implements IRunnable {
       }
     }
 
-    for (let playerId of this._players) {
-      let playerSession = sessions.get(playerId);
+    this.sendChunkToPlayers(rtmpChunks, flvTag);
+  }
 
-      if (playerSession.numPlayCache === 0) {
-        playerSession.res.cork();
+  private sendChunkToPlayers(chunk: Buffer, flvTag: Buffer) {
+    for (const playerId of this._players) {
+      const player_session = players_sessions.get(playerId);
+      if (player_session == undefined) continue;
+
+      if (player_session.numPlayCache === 0) {
+        player_session.res.cork();
       }
 
-      if (playerSession instanceof RtmpSession) {
-        if (
-          playerSession._starting &&
-          playerSession._playing &&
-          !playerSession._paused &&
-          playerSession._receiveAudio
-        ) {
-          rtmpChunks.writeUInt32LE(playerSession._playStreamId, 8);
-          playerSession._socket.write(rtmpChunks);
-        }
-      } else if (playerSession instanceof NodeFlvSession) {
-        playerSession.res.write(flvTag, null, (e: Error) => {
-          //websocket will throw a error if not set the cb when closed
-        });
+      if (
+        player_session.starting == false ||
+        player_session.playing == false ||
+        player_session.paused
+      )
+        continue;
+
+      if (player_session instanceof RtmpSession) {
+        chunk.writeUInt32LE(player_session._playStreamId, 8);
+        player_session._socket.write(chunk);
+      }
+      else if(player_session instanceof FlvSession) {
+        player_session.res.write(
+          flvTag,
+          "utf8",
+          (e: Error | undefined | null) => {
+            //websocket will throw a error if not set the cb when closed
+          }
+        );
       }
 
-      playerSession.numPlayCache++;
+      player_session.numPlayCache++;
 
-      if (playerSession.numPlayCache === 10) {
-        process.nextTick(() => playerSession.res.uncork());
-        playerSession.numPlayCache = 0;
+      if (player_session.numPlayCache === 10) {
+        process.nextTick(() => player_session.socket.uncork());
+        player_session.numPlayCache = 0;
       }
     }
   }
@@ -908,7 +1023,7 @@ export class RtmpSession implements IRunnable {
     packet.header.length = packet.payload.length;
     packet.header.timestamp = this._parserPacket.clock;
     let rtmpChunks = this.rtmpChunksCreate(packet);
-    let flvTag = NodeFlvSession.createFlvTag(packet);
+    let flvTag = FlvSession.createFlvTag(packet);
 
     //cache gop
     if (this._rtmpGopCacheQueue != null) {
@@ -928,37 +1043,7 @@ export class RtmpSession implements IRunnable {
       }
     }
 
-    // Logger.log(rtmpChunks);
-    for (let playerId of this._players) {
-      let playerSession = sessions.get(playerId);
-
-      if (playerSession.numPlayCache === 0) {
-        playerSession.res.cork();
-      }
-
-      if (playerSession instanceof RtmpSession) {
-        if (
-          playerSession._starting &&
-          playerSession._playing &&
-          !playerSession._paused &&
-          playerSession._receiveVideo
-        ) {
-          rtmpChunks.writeUInt32LE(playerSession._playStreamId, 8);
-          playerSession._socket.write(rtmpChunks);
-        }
-      } else if (playerSession instanceof NodeFlvSession) {
-        playerSession.res.write(flvTag, null, (e: Error) => {
-          //websocket will throw a error if not set the cb when closed
-        });
-      }
-
-      playerSession.numPlayCache++;
-
-      if (playerSession.numPlayCache === 10) {
-        process.nextTick(() => playerSession.res.uncork());
-        playerSession.numPlayCache = 0;
-      }
-    }
+    this.sendChunkToPlayers(rtmpChunks, flvTag);
   }
 
   private rtmpDataHandler(): void {
@@ -992,10 +1077,10 @@ export class RtmpSession implements IRunnable {
         packet.payload = this._metaData;
         packet.header.length = packet.payload.length;
         let rtmpChunks = this.rtmpChunksCreate(packet);
-        let flvTag = NodeFlvSession.createFlvTag(packet);
+        let flvTag = FlvSession.createFlvTag(packet);
 
         for (let playerId of this._players) {
-          let playerSession = sessions.get(playerId);
+          const playerSession = players_sessions.get(playerId);
           if (playerSession instanceof RtmpSession) {
             if (
               playerSession._starting &&
@@ -1005,10 +1090,14 @@ export class RtmpSession implements IRunnable {
               rtmpChunks.writeUInt32LE(playerSession._playStreamId, 8);
               playerSession._socket.write(rtmpChunks);
             }
-          } else if (playerSession instanceof NodeFlvSession) {
-            playerSession.res.write(flvTag, null, (e: Error) => {
-              //websocket will throw a error if not set the cb when closed
-            });
+          } else if (playerSession instanceof FlvSession) {
+            playerSession.res.write(
+              flvTag,
+              "utf8",
+              (e: Error | undefined | null) => {
+                //websocket will throw a error if not set the cb when closed
+              }
+            );
           }
         }
         break;
@@ -1023,6 +1112,7 @@ export class RtmpSession implements IRunnable {
       this._parserPacket.header.length
     );
     let invokeMessage = AMF.decodeAmf0Cmd(payload);
+
     // Logger.log(invokeMessage);
     switch (invokeMessage.cmd) {
       case "connect":
@@ -1212,9 +1302,6 @@ export class RtmpSession implements IRunnable {
   }
 
   private onConnect(invokeMessage: any): void {
-
-    console.log("Connected!");
-
     invokeMessage.cmdObj.app = invokeMessage.cmdObj.app.replace("/", ""); //fix jwplayer
     events.emit("preConnect", this._id, invokeMessage.cmdObj);
     if (!this._starting) {
@@ -1255,8 +1342,32 @@ export class RtmpSession implements IRunnable {
     if (typeof invokeMessage.streamName !== "string") {
       return;
     }
-    this._publishStreamPath =
-      "/" + this._appName + "/" + invokeMessage.streamName.split("?")[0];
+    this._publishStreamPath = `/${this._appName}/${
+      invokeMessage.streamName.split("?")[0]
+    }`;
+
+    const sendError = (tag: string, message: string) => {
+      this.sendStatusMessage(this._publishStreamId, "error", tag, message);
+    };
+
+    if (publishers_paths.has(this._publishStreamPath)) {
+      this.reject();
+      Logger.log(
+        `[rtmp publish] Already has a stream. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
+      );
+      sendError("NetStream.Publish.BadName", "Stream already publishing");
+      return;
+    } else if (this._publishing) {
+      Logger.log(
+        `[rtmp publish] NetConnection is publishing. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
+      );
+      sendError(
+        "NetStream.Publish.BadConnection",
+        "Connection already publishing"
+      );
+      return;
+    }
+
     this._publishArgs = QueryString.parse(
       invokeMessage.streamName.split("?")[1]
     );
@@ -1267,12 +1378,10 @@ export class RtmpSession implements IRunnable {
       this._publishStreamPath,
       this._publishArgs
     );
-    if (!this._starting) {
-      return;
-    }
+    if (this._starting == false) return;
 
-    if (this._config.auth && this._config.auth.publish && !this.isLocal) {
-      let results = NodeCoreUtils.verifyAuth(
+    if (this._config.auth && this._config.auth.publish) {
+      let results = utils.verifyAuth(
         this._publishArgs.sign,
         this._publishStreamPath,
         this._config.auth.secret
@@ -1281,68 +1390,40 @@ export class RtmpSession implements IRunnable {
         Logger.log(
           `[rtmp publish] Unauthorized. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId} sign=${this._publishArgs.sign} `
         );
-        this.sendStatusMessage(
-          this._publishStreamId,
-          "error",
-          "NetStream.publish.Unauthorized",
-          "Authorization required."
-        );
+        sendError("NetStream.publish.Unauthorized", "Authorization required.");
         return;
       }
     }
 
-    if (publishers.has(this._publishStreamPath)) {
-      this.reject();
-      Logger.log(
-        `[rtmp publish] Already has a stream. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
-      );
-      this.sendStatusMessage(
-        this._publishStreamId,
-        "error",
-        "NetStream.Publish.BadName",
-        "Stream already publishing"
-      );
-    } else if (this._publishing) {
-      Logger.log(
-        `[rtmp publish] NetConnection is publishing. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
-      );
-      this.sendStatusMessage(
-        this._publishStreamId,
-        "error",
-        "NetStream.Publish.BadConnection",
-        "Connection already publishing"
-      );
-    } else {
-      Logger.log(
-        `[rtmp publish] New stream. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
-      );
+    Logger.log(
+      `[rtmp publish] New stream. id=${this._id} streamPath=${this._publishStreamPath} streamId=${this._publishStreamId}`
+    );
 
-      publishers.set(this._publishStreamPath, this._id);
-      this._publishing = true;
+    publishers_paths.set(this._publishStreamPath, this._id);
+    this._publishing = true;
 
-      this.sendStatusMessage(
-        this._publishStreamId,
-        "status",
-        "NetStream.Publish.Start",
-        `${this._publishStreamPath} is now published.`
-      );
-      for (let idlePlayerId of idlePlayers) {
-        let idlePlayer = sessions.get(idlePlayerId);
-        if (
-          idlePlayer &&
-          idlePlayer.playStreamPath === this._publishStreamPath
-        ) {
-          idlePlayer.onStartPlay();
-          idlePlayers.delete(idlePlayerId);
-        }
+    this.sendStatusMessage(
+      this._publishStreamId,
+      "status",
+      "NetStream.Publish.Start",
+      `${this._publishStreamPath} is now published.`
+    );
+
+    for (let idlePlayerId of idlePlayers) {
+      const idlePlayer = players_sessions.get(idlePlayerId);
+      if (idlePlayer && idlePlayer.streamPath === this._publishStreamPath) {
+        idlePlayer.play();
+        idlePlayers.delete(idlePlayerId);
       }
-      events.emit(
-        "postPublish",
-        this._id,
-        this._publishStreamPath,
-        this._publishArgs
-      );
     }
+    events.emit(
+      "postPublish",
+      this._id,
+      this._publishStreamPath,
+      this._publishArgs
+    );
+
+    publisher_sessions.set(this._id, this);
   }
 
   private onPlay(invokeMessage: any): void {
@@ -1360,7 +1441,7 @@ export class RtmpSession implements IRunnable {
     }
 
     if (this._config.auth && this._config.auth.play && !this.isLocal) {
-      let results = NodeCoreUtils.verifyAuth(
+      let results = utils.verifyAuth(
         this._playArgs.sign,
         this._playStreamPath,
         this._config.auth.secret
@@ -1392,9 +1473,12 @@ export class RtmpSession implements IRunnable {
     } else {
       this.respondPlay();
     }
+    
 
-    if (publishers.has(this._playStreamPath)) {
-      this.onStartPlay();
+    players_sessions.set(this._id, this);
+
+    if (publishers_paths.has(this._playStreamPath)) {
+      this.play();
     } else {
       Logger.log(
         `[rtmp play] Stream not found. id=${this._id} streamPath=${this._playStreamPath}  streamId=${this._playStreamId}`
@@ -1402,67 +1486,6 @@ export class RtmpSession implements IRunnable {
       this._idling = true;
       idlePlayers.add(this._id);
     }
-  }
-
-  private onStartPlay(): void {
-    let publisherId = publishers.get(this._playStreamPath);
-    let publisher = sessions.get(publisherId);
-    let players = publisher.players;
-    players.add(this._id);
-
-    if (publisher.metaData != null) {
-      let packet = new RtmpPacket();
-      packet.header.fmt = RTMP_CHUNK_TYPE_0;
-      packet.header.cid = RTMP_CHANNEL_DATA;
-      packet.header.type = RTMP_TYPE_DATA;
-      packet.payload = publisher.metaData;
-      packet.header.length = packet.payload.length;
-      packet.header.stream_id = this._playStreamId;
-      let chunks = this.rtmpChunksCreate(packet);
-      this._socket.write(chunks);
-    }
-
-    if (publisher.audioCodec === 10 || publisher.audioCodec === 13) {
-      let packet = new RtmpPacket();
-      packet.header.fmt = RTMP_CHUNK_TYPE_0;
-      packet.header.cid = RTMP_CHANNEL_AUDIO;
-      packet.header.type = RTMP_TYPE_AUDIO;
-      packet.payload = publisher.aacSequenceHeader;
-      packet.header.length = packet.payload.length;
-      packet.header.stream_id = this._playStreamId;
-      let chunks = this.rtmpChunksCreate(packet);
-      this._socket.write(chunks);
-    }
-
-    if (
-      publisher.videoCodec === 7 ||
-      publisher.videoCodec === 12 ||
-      publisher.videoCodec === 13
-    ) {
-      let packet = new RtmpPacket();
-      packet.header.fmt = RTMP_CHUNK_TYPE_0;
-      packet.header.cid = RTMP_CHANNEL_VIDEO;
-      packet.header.type = RTMP_TYPE_VIDEO;
-      packet.payload = publisher.avcSequenceHeader;
-      packet.header.length = packet.payload.length;
-      packet.header.stream_id = this._playStreamId;
-      let chunks = this.rtmpChunksCreate(packet);
-      this._socket.write(chunks);
-    }
-
-    if (publisher.rtmpGopCacheQueue != null) {
-      for (let chunks of publisher.rtmpGopCacheQueue) {
-        chunks.writeUInt32LE(this._playStreamId, 8);
-        this._socket.write(chunks);
-      }
-    }
-
-    this._idling = false;
-    this._playing = true;
-    events.emit("postPlay", this._id, this._playStreamPath, this._playArgs);
-    Logger.log(
-      `[rtmp play] Join stream. id=${this._id} streamPath=${this._playStreamPath}  streamId=${this._playStreamId} `
-    );
   }
 
   private onPause(invokeMessage: any): void {
@@ -1476,10 +1499,15 @@ export class RtmpSession implements IRunnable {
     );
     if (!this._paused) {
       this.sendStreamStatus(STREAM_BEGIN, this._playStreamId);
-      if (publishers.has(this._playStreamPath)) {
+      if (publishers_paths.has(this._playStreamPath)) {
         //fix ckplayer
-        let publisherId = publishers.get(this._playStreamPath);
-        let publisher = sessions.get(publisherId);
+        const publisherId = publishers_paths.get(this._playStreamPath);
+        const publisher = publisher_sessions.get(publisherId as string);
+
+        if (publisher == undefined) {
+          return;
+        }
+
         if (publisher.audioCodec === 10 || publisher.audioCodec === 13) {
           let packet = new RtmpPacket();
           packet.header.fmt = RTMP_CHUNK_TYPE_0;
@@ -1541,9 +1569,9 @@ export class RtmpSession implements IRunnable {
         idlePlayers.delete(this._id);
         this._idling = false;
       } else {
-        let publisherId = publishers.get(this._playStreamPath);
+        let publisherId = publishers_paths.get(this._playStreamPath);
         if (publisherId != null) {
-          sessions.get(publisherId).players.delete(this._id);
+          publisher_sessions.get(publisherId)?.players.delete(this._id);
         }
         events.emit("donePlay", this._id, this._playStreamPath, this._playArgs);
         this._playing = false;
@@ -1584,7 +1612,7 @@ export class RtmpSession implements IRunnable {
         }
 
         for (let playerId of this._players) {
-          let playerSession = sessions.get(playerId);
+          const playerSession = players_sessions.get(playerId);
           if (playerSession instanceof RtmpSession) {
             playerSession.sendStatusMessage(
               playerSession._playStreamId,
@@ -1594,16 +1622,16 @@ export class RtmpSession implements IRunnable {
             );
             playerSession.flush();
           } else {
-            playerSession.stop();
+            playerSession?.stop();
           }
         }
 
         //let the players to idlePlayers
         for (let playerId of this._players) {
-          let playerSession = sessions.get(playerId);
+          let playerSession = players_sessions.get(playerId);
           idlePlayers.add(playerId);
-          playerSession.isPlaying = false;
-          playerSession.isIdling = true;
+          //playerSession.isPlaying = false;
+          //playerSession.isIdling = true;
           if (playerSession instanceof RtmpSession) {
             playerSession.sendStreamStatus(
               STREAM_EOF,
@@ -1612,7 +1640,7 @@ export class RtmpSession implements IRunnable {
           }
         }
 
-        publishers.delete(this._publishStreamPath);
+        publishers_paths.delete(this._publishStreamPath);
         if (this._rtmpGopCacheQueue) {
           this._rtmpGopCacheQueue.clear();
         }
